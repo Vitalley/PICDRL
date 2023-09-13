@@ -1,11 +1,12 @@
 #include <xc.h>
 #include <stdint.h>
-#define _XTAL_FREQ 16000000
-#define delay_on 1000
-bit DRL_ON, tmp, brl, motr, brtns;
+#define _XTAL_FREQ 1000000
+#define delay_on 600
+#define preheat 0
+bit DRL_ON, tmp, brl, motr = 0 , brtns;
 void init(void)
 {
-	OSCCON = 0x70;
+	OSCCON = 0x5A;//12
 	OSCTUNE = 0x00;
 	BORCON = 0x00;
 	WDTCON = 0x14;
@@ -15,7 +16,7 @@ void init(void)
 	WPUA = 0x00;
 	OPTION_REGbits.nWPUEN = 1;
 	APFCON = 0x00;
-	ADCON1 = 0xA0;
+	ADCON1 = 0xF0;
 	ADCON0 = 0x01;
 	OPTION_REG = (unsigned char)((OPTION_REG & 0xC0) | (0xD6 & 0x3F));
 	TMR0 = 0xD8;
@@ -37,7 +38,16 @@ void init(void)
 
 void EPWM_LoadDutyValue(unsigned int dutyValue)
 {
-   // Writing to 8 MSBs of pwm duty cycle in CCPRL register
+   if (dutyValue == 0) 
+	{
+		CCP1CONbits.CCP1M = 0;
+		return;
+	}
+	else
+	{
+		CCP1CONbits.CCP1M = 0x0C;
+	}
+	// Writing to 8 MSBs of pwm duty cycle in CCPRL register
     CCPR1L = ((dutyValue & 0x03FC)>>2);
     
    // Writing to 2 LSBs of pwm duty cycle in CCPCON register
@@ -56,16 +66,18 @@ unsigned int GET_ADC(unsigned char channel)
 void DRL(char motor, char trtn)
 {
 	static int cntr;
-	if (motor==1 & cntr<delay_on) cntr++;
+	if (motor==1 && cntr<delay_on) cntr++;
 	if (motor==0) cntr=0;
-	if (cntr>=delay_on & trtn==0) DRL_ON=1; else DRL_ON=0;
+	if (cntr>=delay_on && trtn==0) DRL_ON=1; else DRL_ON=0;
 	if (cntr>=delay_on) LATA5=1; else LATA5=0;
 }
 void main(void)
 {
 	static int pwm, volt, temp, sens;
 	init();
-	EPWM_LoadDutyValue(0x6);
+	EPWM_LoadDutyValue(preheat);
+	GET_ADC(0x01); //AN0 Была проблема что первый опрос АЦП давал результат 28013
+	__delay_ms(100);
 	while(1)
 	{
 		volt = 0;
@@ -81,8 +93,8 @@ void main(void)
 		sens = sens/4;
 		temp = temp/4;
 		CLRWDT();
-		if (volt > 445) motr=1;//445
-		if (volt < 410) motr=0;//410
+		if (volt > 540) motr=1;//445
+		if (volt < 450) motr=0;//410
 		
 		if (sens > 400) brl =1;
 		if (sens < 300) brl =0;
@@ -97,7 +109,7 @@ void main(void)
 		}
 		if (DRL_ON==1)
 		{
-			if (tmp==1 & pwm>0xAA)
+			if (tmp==1 && pwm>0xAA)
 			{
 				pwm--; EPWM_LoadDutyValue(pwm);
 			}
@@ -108,7 +120,7 @@ void main(void)
 //			pwm++; EPWM_LoadDutyValue(pwm);
 		} 
 		//else DRL_ON=0;
-		if (DRL_ON==0 & pwm>6)
+		if (DRL_ON==0 && pwm>preheat)
 		{
 			pwm--; EPWM_LoadDutyValue(pwm);
 		} 
